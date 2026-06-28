@@ -1,6 +1,7 @@
 # tts_kokoro
 
 Crystal shard client for `kokoro_api_server`. Stateful sentence tokenization and stream buffering.
+=> https://github.com/ieve-rothe/kokoro_api_server Kokoro Api Server
 
 ## Installation
 
@@ -9,7 +10,7 @@ Add to your `shard.yml`:
 ```yaml
 dependencies:
   tts_kokoro:
-    github: user/tts_kokoro
+    github: ieve-rothe/tts_kokoro
 ```
 
 ## Usage
