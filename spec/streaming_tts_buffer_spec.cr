@@ -67,6 +67,33 @@ describe TtsKokoro::SentenceTokenizer do
     tokenizer.push("Incomplete sentence")
     tokenizer.flush.should eq(["Incomplete sentence"])
   end
+
+  it "splits on markdown headers" do
+    tokenizer = TtsKokoro::SentenceTokenizer.new
+    tokenizer.push("Here is the breakdown:\n### 1. Header\nParagraph").should eq([
+      "Here is the breakdown:",
+      "### 1. Header"
+    ])
+  end
+
+  it "splits on paragraph breaks" do
+    tokenizer = TtsKokoro::SentenceTokenizer.new
+    tokenizer.push("First paragraph\n\nSecond paragraph").should eq([
+      "First paragraph"
+    ])
+  end
+
+  it "splits on parenthesized or bracketed sentence endings" do
+    tokenizer = TtsKokoro::SentenceTokenizer.new
+    tokenizer.push("This is (nested). Next sentence. ").should eq([
+      "This is (nested).",
+      "Next sentence."
+    ])
+    tokenizer.push("This is [bracketed]. Next sentence. ").should eq([
+      "This is [bracketed].",
+      "Next sentence."
+    ])
+  end
 end
 
 describe TtsKokoro::StreamingTTSBuffer do

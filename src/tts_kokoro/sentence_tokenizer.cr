@@ -20,6 +20,9 @@ module TtsKokoro
       sentences = [] of String
       
       while !@buffer.empty?
+        @buffer = @buffer.lstrip
+        break if @buffer.empty?
+
         if @in_code_block
           # Look for closing code block
           if idx = @buffer.index("```")
@@ -66,11 +69,55 @@ module TtsKokoro
       (remaining.empty? || @in_code_block) ? [] of String : [remaining]
     end
 
+    private def starts_with_block_element?(str : String) : Bool
+      # Check for markdown headers
+      return true if str.starts_with?('#')
+      
+      # Check for unordered lists
+      return true if str.starts_with?("- ") || str.starts_with?("* ")
+      
+      # Check for numbered lists (e.g. "1. ", "12. ")
+      if idx = str.index('.')
+        if idx > 0 && idx < 5 # reasonable limit for list numbers
+          prefix = str[0...idx]
+          if prefix.each_char.all?(&.ascii_number?) && str[idx + 1]? == ' '
+            return true
+          end
+        end
+      end
+      
+      false
+    end
+
     private def find_next_boundary : Int32?
+      # 1. Check if the buffer starts with a block element.
+      # If it does, the next newline (\n) is the boundary.
+      if starts_with_block_element?(@buffer)
+        if idx = @buffer.index('\n')
+          return idx
+        end
+      end
+
+      # 2. Iterate character-by-character to find the first boundary.
       i = 0
       while i < @buffer.size
+        char = @buffer[i]
+
+        # Paragraph breaks (\n\n)
+        if char == '\n' && @buffer[i + 1]? == '\n'
+          return i
+        end
+
+        # Block-level element transitions (newline followed by a block element)
+        if char == '\n'
+          remaining = @buffer[(i + 1)..-1].lstrip
+          if starts_with_block_element?(remaining)
+            return i
+          end
+        end
+
         # Inline code boundaries
-        if @buffer[i] == '`'
+        if char == '`'
           @in_inline_code = !@in_inline_code
           i += 1
           next
@@ -78,7 +125,6 @@ module TtsKokoro
         next i += 1 if @in_inline_code
 
         # Brackets / Parentheses
-        char = @buffer[i]
         if char == '[' || char == '('
           @in_brackets += 1
         elsif char == ']' || char == ')'
@@ -121,15 +167,23 @@ module TtsKokoro
       # Exclude numbered lists (preceding word is numeric AND is at the start of a line/buffer)
       return false if is_numbered_list?(word, word_start)
 
-      # Exclude initials/acronyms (preceding word is a single character)
-      return false if word.size == 1
+      # Exclude initials/acronyms (preceding word is a single alphabetical character)
+      return false if word.size == 1 && word[0].ascii_letter?
 
       true
     end
 
     private def extract_preceding_word(index : Int32) : Tuple(String, Int32)
       start_idx = index - 1
-      while start_idx >= 0 && @buffer[start_idx].ascii_whitespace?
+      # Skip trailing whitespace and non-alphanumeric punctuation/brackets/quotes
+      while start_idx >= 0 && (
+            @buffer[start_idx].ascii_whitespace? || 
+            @buffer[start_idx] == ')' || 
+            @buffer[start_idx] == ']' || 
+            @buffer[start_idx] == '}' || 
+            @buffer[start_idx] == '"' || 
+            @buffer[start_idx] == '\''
+          )
         start_idx -= 1
       end
       end_idx = start_idx
