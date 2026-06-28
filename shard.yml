@@ -1,0 +1,12 @@
+name: tts_kokoro
+version: 0.1.0
+
+authors:
+  - ieve (Cam Carroll) <ievemail@proton.me>
+
+dependencies:
+  # Standard library dependencies only. No external shards required.
+
+crystal: '>= 1.18.2'
+
+license: MIT
