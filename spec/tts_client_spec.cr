@@ -40,4 +40,35 @@ describe TtsKokoro::TTS do
       result.should eq("Wait, what? Yes.")
     end
   end
+
+  describe "#speak_blocking connection resilience" do
+    it "reconnects and retries when the initial socket is closed by the server" do
+      requests_count = 0
+      server = HTTP::Server.new do |context|
+        requests_count += 1
+        context.response.content_type = "application/json"
+        context.response.print({"status" => "queued"}.to_json)
+        if requests_count == 1
+          context.response.headers["Connection"] = "close"
+        end
+      end
+
+      address = server.bind_tcp("127.0.0.1", 0)
+      spawn { server.listen }
+
+      begin
+        tts = TtsKokoro::TTS.new("http://127.0.0.1:#{address.port}/speak")
+        tts.speak_blocking("System Online")
+        requests_count.should eq(1)
+
+        tts.speak_blocking("Bot response")
+        tts.server_online?.should be_true
+        requests_count.should eq(2)
+      ensure
+        server.close
+      end
+    end
+  end
+
 end
+

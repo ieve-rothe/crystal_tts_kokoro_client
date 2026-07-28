@@ -9,19 +9,53 @@ module TtsKokoro
     Log = ::Log.for("tts_kokoro")
 
     @endpoint : String
+    @uri : URI
+    @connect_timeout : Time::Span
+    @read_timeout : Time::Span
     @client : HTTP::Client
     @server_online = true
     @probing = false
 
     def initialize(
       @endpoint = "http://127.0.0.1:8888/speak",
-      connect_timeout : Time::Span = 2.seconds,
-      read_timeout : Time::Span = 30.seconds
+      @connect_timeout : Time::Span = 2.seconds,
+      @read_timeout : Time::Span = 30.seconds
     )
-      uri = URI.parse(endpoint)
-      @client = HTTP::Client.new(uri.host.not_nil!, uri.port.not_nil!, tls: uri.scheme == "https")
-      @client.connect_timeout = connect_timeout
-      @client.read_timeout = read_timeout
+      @uri = URI.parse(endpoint)
+      @client = create_client
+    end
+
+    private def create_client : HTTP::Client
+      client = HTTP::Client.new(@uri.host.not_nil!, @uri.port.not_nil!, tls: @uri.scheme == "https")
+      client.connect_timeout = @connect_timeout
+      client.read_timeout = @read_timeout
+      client
+    end
+
+    private def reset_client
+      begin
+        @client.close
+      rescue
+      end
+      @client = create_client
+    end
+
+    private def post_with_retry(path : String, headers : HTTP::Headers? = nil, body : String? = nil) : HTTP::Client::Response
+      attempts = 0
+      loop do
+        begin
+          return @client.post(path, headers: headers, body: body)
+        rescue ex : Exception
+          attempts += 1
+          reset_client
+          if attempts <= 1
+            Log.debug { "TTS socket disconnected (#{ex.class}: #{ex.message}); re-establishing connection and retrying..." }
+            next
+          else
+            raise ex
+          end
+        end
+      end
     end
 
     # Sanitizes text for natural speech output by removing formatting and symbols.
@@ -78,7 +112,7 @@ module TtsKokoro
       # Fiber execution with robust error routing
       spawn do
         begin
-          response = @client.post(
+          response = post_with_retry(
             "/speak",
             headers: HTTP::Headers{"Content-Type" => "application/json"},
             body: payload
@@ -107,7 +141,7 @@ module TtsKokoro
       }.to_json
 
       begin
-        response = @client.post(
+        response = post_with_retry(
           "/speak",
           headers: HTTP::Headers{"Content-Type" => "application/json"},
           body: payload
@@ -126,7 +160,7 @@ module TtsKokoro
       return unless @server_online
 
       begin
-        response = @client.post("/stop")
+        response = post_with_retry("/stop")
         unless response.status.success?
           Log.error { "TTS Stop Error: #{response.body}" }
         end
@@ -150,6 +184,7 @@ module TtsKokoro
       return unless @server_online
 
       @server_online = false
+      reset_client
       Log.warn { "TTS has been temporarily disabled. Starting health recovery probes..." }
       start_health_probes
     end
